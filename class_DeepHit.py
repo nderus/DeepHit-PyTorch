@@ -200,13 +200,19 @@ class Model_DeepHit(nn.Module):
         self.eval()  # Set the model to evaluation mode (disables dropout, etc.)
         with torch.no_grad():  # Disable gradient computation during inference
             return self.forward(x_test)
+        
 
 
 from itertools import chain
 from typing import Iterator
+from ..SurvFrailtyMTL.FAMO.methods.weight_methods import WeightMethods
 
 class Model_DeepHit_FAMO(Model_DeepHit):
-    def __init__(self, input_dims, network_settings):
+    def __init__(self, input_dims, network_settings, weight_method_params, method='None', n_tasks=3):
+        self.mehtod = method
+        self.weight_method = WeightMethods(method=method, n_tasks=n_tasks, **weight_method_params[method])
+        self.weight_method.method.min_losses = torch.zeros(n_tasks) - 1.
+        print(f"Initial Task Weights: {self.weight_method.method.w.detach().cpu().numpy()}")
         super(Model_DeepHit_FAMO, self).__init__(input_dims, network_settings)
 
     # Override the training_step method to use FAMO optimization
@@ -225,10 +231,22 @@ class Model_DeepHit_FAMO(Model_DeepHit):
         loss, losses = self.compute_loss(DATA, MASK, PARAMETERS, predictions)
 
         # Backward pass and optimization using FAMO optimizer
-        loss.backward()
+        _, new_losses = self.weight_method.backward(
+            losses=losses,
+            shared_parameters=list(self.shared_parameters()),
+            task_specific_parameters=list(self.cause_specific_parameters()),
+            last_shared_parameters=list(self.last_shared_parameters())
+        )
         optimizer.step()  # This step could include additional logic specific to FAMO
 
+        if self.method == 'famo':
+            with torch.no_grad():
+                predictions = self(x_mb)
+                new_losses, _ = self.compute_loss(DATA, MASK, PARAMETERS, predictions)
+                self.weight_method.method.update(new_losses.detach())
+
         return loss.item()
+    
     
 
     def compute_loss(self, DATA, MASK, PARAMETERS, predictions):
@@ -314,12 +332,12 @@ class Model_DeepHit_FAMO(Model_DeepHit):
         # Returns the parameters of all shared layers
         return chain(self.shared_layers.parameters())
     
-
     def cause_specific_parameters(self) -> Iterator[torch.nn.parameter.Parameter]:
         # Returns the parameters of all shared layers
         return chain(self.cause_specific_layers.parameters())
     
-    def output_parameters(self) -> Iterator[torch.nn.parameter.Parameter]:
+    def last_shared_parameters(self) -> Iterator[torch.nn.parameter.Parameter]:
         # Returns the parameters of all shared layers
         return chain(self.output_layer.parameters())
     
+
