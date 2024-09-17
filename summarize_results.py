@@ -14,6 +14,13 @@ from utils_eval import c_index, brier_score, weighted_c_index, weighted_brier_sc
 
 _EPSILON = 1e-08
 
+def set_seeds(seed):
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
 def load_logging(filename):
     data = dict()
@@ -43,7 +50,7 @@ def load_logging(filename):
 
 ##### MAIN SETTING #####
 OUT_ITERATION = 5
-data_mode = 'SYNTHETIC'  # METABRIC, SYNTHETIC
+data_mode = 'METABRIC'  # METABRIC, SYNTHETIC
 seed = 1234
 EVAL_TIMES = [12, 24, 36]  # Evaluation times (for C-index and Brier-Score)
 
@@ -71,7 +78,9 @@ FINAL2 = np.zeros([num_Event, len(EVAL_TIMES), OUT_ITERATION])
 for out_itr in range(OUT_ITERATION):
     in_hypfile = os.path.join(in_path, f'itr_{out_itr}/hyperparameters_log.txt')
     in_parser = load_logging(in_hypfile)
-
+    print("Hyperparameters being used:")
+    for key, value in in_parser.items():
+        print(f"{key}: {value}")
     ##### HYPER-PARAMETERS #####
     mb_size = in_parser['mb_size']
     iteration = in_parser['iteration']
@@ -114,8 +123,42 @@ for out_itr in range(OUT_ITERATION):
     }
 
     ##### CREATE DEEPHIT NETWORK #####
-    model = Model_DeepHit("DeepHit", input_dims, network_settings)
+    set_seeds(seed)
+    model = Model_DeepHit(input_dims, network_settings)
+    # Print the attributes of the model to check if they match the parser settings
+    print("Model initialized with the following settings:")
+    print(f"x_dim: {model.x_dim}")
+    print(f"num_Event: {model.num_Event}")
+    print(f"num_Category: {model.num_Category}")
+    print(f"h_dim_shared: {model.h_dim_shared}")
+    print(f"h_dim_CS: {model.h_dim_CS}")
+    print(f"num_layers_shared: {model.num_layers_shared}")
+    print(f"num_layers_CS: {model.num_layers_CS}")
+    print(f"active_fn: {model.active_fn}")
+    print(f"initial_W: {model.initial_W}")
 
+    # Checking shared layers
+    print("\nShared layers:")
+    for i, layer in enumerate(model.shared_layers):
+        print(f"Layer {i}: {layer}")
+
+    # Checking cause-specific layers
+    print("\nCause-specific layers:")
+    for i, event_layers in enumerate(model.cause_specific_layers):
+        print(f"Event {i} layers:")
+        for j, layer in enumerate(event_layers):
+            print(f"  Layer {j}: {layer}")
+
+    # Assertions for checking model attributes against parser settings
+    assert model.x_dim == input_dims['x_dim'], f"x_dim mismatch: {model.x_dim} != {input_dims['x_dim']}"
+    assert model.num_Event == input_dims['num_Event'], f"num_Event mismatch: {model.num_Event} != {input_dims['num_Event']}"
+    assert model.num_Category == input_dims['num_Category'], f"num_Category mismatch: {model.num_Category} != {input_dims['num_Category']}"
+
+    assert model.h_dim_shared == network_settings['h_dim_shared'], f"h_dim_shared mismatch: {model.h_dim_shared} != {network_settings['h_dim_shared']}"
+    assert model.h_dim_CS == network_settings['h_dim_CS'], f"h_dim_CS mismatch: {model.h_dim_CS} != {network_settings['h_dim_CS']}"
+    assert model.num_layers_shared == network_settings['num_layers_shared'], f"num_layers_shared mismatch: {model.num_layers_shared} != {network_settings['num_layers_shared']}"
+    assert model.num_layers_CS == network_settings['num_layers_CS'], f"num_layers_CS mismatch: {model.num_layers_CS} != {network_settings['num_layers_CS']}"
+    
     ### TRAINING-TESTING SPLIT ###
     (tr_data, te_data, tr_time, te_time, tr_label, te_label,
      tr_mask1, te_mask1, tr_mask2, te_mask2) = train_test_split(
@@ -126,7 +169,7 @@ for out_itr in range(OUT_ITERATION):
         tr_data, tr_time, tr_label, tr_mask1, tr_mask2, test_size=0.20, random_state=seed)
 
     ##### LOAD SAVED MODEL #####
-    model.load_state_dict(torch.load(os.path.join(in_path, f'itr_{out_itr}/models/model_itr_{out_itr}.pt')))
+    model.load_state_dict(torch.load(os.path.join(in_path, f'itr_{out_itr}/models/model_itr_{out_itr}.pth')))
 
     ### PREDICTION ###
     model.eval()

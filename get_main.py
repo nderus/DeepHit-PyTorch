@@ -151,9 +151,9 @@ def get_valid_performance(DATA, MASK, in_parser, out_itr, eval_time=None, MAX_VA
                 stop_flag = 0
                 max_valid = tmp_valid
                 print(f'Updated... Average C-index = {tmp_valid:.4f}')
-
-                # Save model weights when validation improves
-                torch.save(model.state_dict(), os.path.join(file_path_final, 'models', f'model_itr_{out_itr}.pth'))
+                if max_valid > MAX_VALUE:
+                    torch.save(model.state_dict(), os.path.join(file_path_final, 'models', f'model_itr_{out_itr}.pth'))
+                
             else:
                 stop_flag += 1
 
