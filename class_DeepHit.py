@@ -35,11 +35,21 @@ class Model_DeepHit(nn.Module):
         self.num_layers_shared = network_settings['num_layers_shared']
         self.num_layers_CS = network_settings['num_layers_CS']
         self.active_fn = network_settings['active_fn']
+        self.initial_W = network_settings['initial_W']  # To track the initializer, not used explicitly
         
         # Build shared and cause-specific subnetworks
         self.shared_layers = self.build_shared_layers()
         self.cause_specific_layers = self.build_cause_specific_layers()
         self.output_layer = self.build_output_layer()
+
+            # Apply weight initialization
+        self.initialize_weights()
+
+    def initialize_weights(self):
+        # Apply the specified initializer (e.g., Xavier Uniform) to all Linear layers
+        for layer in self.shared_layers:
+            if isinstance(layer, nn.Linear):
+                self.initial_W(layer.weight)  # Apply initializer to the weights
 
     def build_shared_layers(self):
         layers = []
