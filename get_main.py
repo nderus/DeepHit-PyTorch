@@ -9,7 +9,7 @@ from sklearn.metrics import brier_score_loss
 
 # Import user-defined utilities
 import utils_network as utils
-from class_DeepHit import Model_DeepHit
+from class_DeepHit import Model_DeepHit, Model_DeepHit_FAMO
 from utils_eval import weighted_c_index, weighted_brier_score
 
 _EPSILON = 1e-08
@@ -32,7 +32,7 @@ def f_get_minibatch(mb_size, x, label, time, mask1, mask2):
     return torch.tensor(x_mb), torch.tensor(k_mb), torch.tensor(t_mb), torch.tensor(m1_mb), torch.tensor(m2_mb)
 
 
-def get_valid_performance(DATA, MASK, in_parser, out_itr, eval_time=None, MAX_VALUE=-99, OUT_ITERATION=5, seed=1234):
+def get_valid_performance(DATA, MASK, in_parser, famo_params, out_itr, eval_time=None, MAX_VALUE=-99, OUT_ITERATION=5, seed=1234):
     ##### DATA & MASK
     (data, time, label) = DATA
     (mask1, mask2) = MASK
@@ -51,6 +51,12 @@ def get_valid_performance(DATA, MASK, in_parser, out_itr, eval_time=None, MAX_VA
     alpha = in_parser['alpha']  # for log-likelihood loss
     beta = in_parser['beta']  # for ranking loss
     gamma = in_parser['gamma']  # for RNN-prediction loss
+
+    gamma_famo = famo_params['gamma']
+    w_lr = famo_params['w_lr']
+    task_weights = famo_params['task_weights']
+    max_norm = famo_params['max_norm']
+
     parameter_name = 'a' + str('%02.0f' % (10 * alpha)) + 'b' + str('%02.0f' % (10 * beta)) + 'c' + str('%02.0f' % (10 * gamma))
 
     # Xavier initializer is GlorotUniform in TensorFlow 2.x
@@ -74,15 +80,23 @@ def get_valid_performance(DATA, MASK, in_parser, out_itr, eval_time=None, MAX_VA
         'initial_W': initial_W
     }
 
+    famo_settings = {
+        'famo': {
+        'gamma': gamma_famo,
+        'w_lr': w_lr,
+        'task_weights': task_weights,
+        'max_norm': max_norm}
+    }
+
     file_path_final = in_parser['out_path'] + '/itr_' + str(out_itr)
 
     # Create directories if they don't exist
-    os.makedirs(file_path_final + '/models/', exist_ok=True)
+    os.makedirs(file_path_final + '/famo_models/', exist_ok=True)
 
-    print(file_path_final + ' (a:' + str(alpha) + ' b:' + str(beta) + ' c:' + str(gamma) + ')')
+    print(file_path_final + ' (a:' + str(alpha) + ' b:' + str(beta) + ' c:' + str(gamma) +  ' gamma_famo:' + str(gamma_famo) + ' w_lr:' + str(w_lr) + ')')
 
     ##### CREATE DEEPHIT NETWORK
-    model = Model_DeepHit(input_dims, network_settings)
+    model = Model_DeepHit_FAMO(input_dims, network_settings, famo_settings )
     optimizer = optim.Adam(model.parameters(), lr=lr_train)
     ### TRAINING-TESTING SPLIT
     (tr_data, te_data, tr_time, te_time, tr_label, te_label, 
@@ -152,7 +166,7 @@ def get_valid_performance(DATA, MASK, in_parser, out_itr, eval_time=None, MAX_VA
                 max_valid = tmp_valid
                 print(f'Updated... Average C-index = {tmp_valid:.4f}')
                 if max_valid > MAX_VALUE:
-                    torch.save(model.state_dict(), os.path.join(file_path_final, 'models', f'model_itr_{out_itr}.pth'))
+                    torch.save(model.state_dict(), os.path.join(file_path_final, 'famo_models', f'model_itr_{out_itr}.pth'))
                 
             else:
                 stop_flag += 1

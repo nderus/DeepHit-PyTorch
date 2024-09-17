@@ -205,12 +205,17 @@ class Model_DeepHit(nn.Module):
 
 from itertools import chain
 from typing import Iterator
-from ..SurvFrailtyMTL.FAMO.methods.weight_methods import WeightMethods
+import sys
+import os
+
+# Add the SurvFrailtyMTL/FAMO/methods directory to the Python path
+sys.path.append(os.path.abspath('../SurvFrailtyMTL/FAMO/methods'))
+from weight_methods import WeightMethods
 
 class Model_DeepHit_FAMO(Model_DeepHit):
-    def __init__(self, input_dims, network_settings, weight_method_params, method='None', n_tasks=3):
-        self.mehtod = method
-        self.weight_method = WeightMethods(method=method, n_tasks=n_tasks, **weight_method_params[method])
+    def __init__(self, input_dims, network_settings, weight_method_params, method='famo', n_tasks=2):
+        self.method = method
+        self.weight_method = WeightMethods(method=method, n_tasks=n_tasks, device='cpu', **weight_method_params[method])
         self.weight_method.method.min_losses = torch.zeros(n_tasks) - 1.
         print(f"Initial Task Weights: {self.weight_method.method.w.detach().cpu().numpy()}")
         super(Model_DeepHit_FAMO, self).__init__(input_dims, network_settings)
@@ -305,27 +310,27 @@ class Model_DeepHit_FAMO(Model_DeepHit):
 
         LOSS_2 = torch.sum(eta)
 
-        ### Loss 3: Calibration loss
-        eta_calibration = []
+        # ### Loss 3: Calibration loss
+        # eta_calibration = []
 
-        for e in range(self.num_Event):
-            I_2 = (k_mb == (e + 1)).float()
-            tmp_e = predictions[:, e, :]  # Event-specific joint probability
+        # for e in range(self.num_Event):
+        #     I_2 = (k_mb == (e + 1)).float()
+        #     tmp_e = predictions[:, e, :]  # Event-specific joint probability
 
-            r = torch.sum(tmp_e * m2_mb, dim=1)  # Sum predicted probabilities up to the event time
-            tmp_eta = torch.mean((r - I_2) ** 2, dim=0, keepdim=True)  # MSE for this event
+        #     r = torch.sum(tmp_e * m2_mb, dim=1)  # Sum predicted probabilities up to the event time
+        #     tmp_eta = torch.mean((r - I_2) ** 2, dim=0, keepdim=True)  # MSE for this event
 
-            eta_calibration.append(tmp_eta)
+        #     eta_calibration.append(tmp_eta)
 
-        eta_calibration = torch.stack(eta_calibration, dim=1)
-        eta_calibration = torch.mean(eta_calibration.view(-1, self.num_Event), dim=1, keepdim=True)
+        # eta_calibration = torch.stack(eta_calibration, dim=1)
+        # eta_calibration = torch.mean(eta_calibration.view(-1, self.num_Event), dim=1, keepdim=True)
 
-        LOSS_3 = torch.sum(eta_calibration)
+        # LOSS_3 = torch.sum(eta_calibration)
 
         ### Total Loss
-        LOSS_TOTAL = alpha * LOSS_1 + beta * LOSS_2 + gamma * LOSS_3
+        LOSS_TOTAL = alpha * LOSS_1 + beta * LOSS_2 #+ gamma * LOSS_3
         ### FAMO losses
-        losses = torch.stack([LOSS_1, LOSS_2, LOSS_3], dim=0)
+        losses = torch.stack([LOSS_1, LOSS_2], dim=0)
         return LOSS_TOTAL, losses
 
     def shared_parameters(self) -> Iterator[torch.nn.parameter.Parameter]:

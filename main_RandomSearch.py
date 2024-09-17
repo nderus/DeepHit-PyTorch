@@ -54,9 +54,11 @@ def get_random_hyperparameters(out_path):
     SET_NODES         = [50, 100, 200, 300]  # Number of nodes per layer
     SET_ACTIVATION_FN = ['relu', 'elu', 'tanh']  # Activation functions
     SET_ALPHA         = [0.1, 0.5, 1.0, 3.0, 5.0]  # Alpha for log-likelihood loss
-    SET_BETA          = [0.1, 0.5, 1.0, 3.0, 5.0]  # Beta for ranking loss
+    SET_BETA          = [0.1, 0.5, 1.0, 3.0, 5.0]   ## Beta for ranking loss
     SET_GAMMA         = [0.1, 0.5, 1.0, 3.0, 5.0]  # Gamma for calibration loss
-
+    
+    SET_GAMMA_FAMO = [1e-3, 1e-4, 1e-5]
+    SET_LR_FAMO = [0.0025, 0.025, 0.01]
     new_parser = {
         'mb_size': random.choice(SET_BATCH_SIZE),
         'iteration': 50000,
@@ -72,8 +74,15 @@ def get_random_hyperparameters(out_path):
         'gamma': 0,  # Default (no calibration loss)
         'out_path': out_path
     }
+
+    famo_parser = {
+        'gamma': random.choice(SET_GAMMA_FAMO),       # Regularization coefficient
+        'w_lr': random.choice(SET_LR_FAMO),       # Learning rate for task weights
+        'task_weights': [0., 0.],  # Initial task weights, assuming 2 tasks (e.g., equal weights)
+        'max_norm': 1.0      # Maximum gradient norm for task weights
+    }
     
-    return new_parser  # Outputs the dictionary of the randomly-chosen hyperparameters
+    return new_parser, famo_parser  # Outputs the dictionary of the randomly-chosen hyperparameters
 
 ##### MAIN RANDOM SEARCH SETUP #####
 OUT_ITERATION = 5  # Number of outer iterations (splits)
@@ -105,7 +114,7 @@ data, time, label = DATA
 mask1, mask2 = MASK
 
 # Set output path for saving results
-out_path = os.path.join(data_mode, 'results')
+out_path = os.path.join(data_mode, 'famo_results')
 
 ##### RANDOM SEARCH ACROSS MULTIPLE OUTER ITERATIONS #####
 for itr in range(OUT_ITERATION):
@@ -116,22 +125,26 @@ for itr in range(OUT_ITERATION):
         os.makedirs(itr_dir)
     
     max_valid = 0.0
-    log_name = os.path.join(itr_dir, 'hyperparameters_log.txt')
+    log_name = os.path.join(itr_dir, 'FAMO_hyperparameters_log.txt')
 
     for r_itr in range(RS_ITERATION):
         print(f'OUTER_ITERATION: {itr}')
         print(f'Random search... iteration: {r_itr}')
 
+
         # Randomly choose hyperparameters
-        new_parser = get_random_hyperparameters(out_path)
+        new_parser, famo_parser = get_random_hyperparameters(out_path)
         print(new_parser)
+        print(famo_parser)
 
         # Get validation performance given the hyperparameters
-        tmp_max = get_main.get_valid_performance(DATA, MASK, new_parser, itr, EVAL_TIMES, MAX_VALUE=max_valid)
+        tmp_max = get_main.get_valid_performance(DATA, MASK, new_parser, famo_parser, itr, EVAL_TIMES, MAX_VALUE=max_valid)
 
         # If new max validation score is found, log the best hyperparameters
         if tmp_max > max_valid:
             max_valid = tmp_max
+            # join the two dictionaries
+            new_parser = {**new_parser, **famo_parser}
             max_parser = new_parser
             save_logging(max_parser, log_name)  # Save the hyperparameters if validation performance improves
 
