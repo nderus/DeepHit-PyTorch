@@ -27,23 +27,18 @@ def f_get_Normalization(X, norm_mode):
 
 ### MASK FUNCTIONS ###
 def f_get_fc_mask2(time, label, num_Event, num_Category):
-    """
-    Create the mask needed for log-likelihood loss (MASK2).
-
-    time: N x 1 array of event times
-    label: N x 1 array of event/censoring labels (0 = censoring, 1, 2, ... = events)
-    num_Event: number of competing events
-    num_Category: number of time intervals (categories)
-
-    Returns: N x num_Event x num_Category mask array
-    """
     mask = np.zeros([time.shape[0], num_Event, num_Category])
+
     for i in range(time.shape[0]):
         if label[i, 0] != 0:  # If not censored
             mask[i, int(label[i, 0] - 1), int(time[i, 0])] = 1
         else:  # If censored
             mask[i, :, int(time[i, 0] + 1):] = 1  # Fill 1 after censoring time
 
+    # Debugging: Print some examples of the mask
+    print(f"Mask 1 [0]:\n{mask[0]}")
+    print(f"Mask 1 [1]:\n{mask[1]}")
+    
     return mask
 
 
@@ -122,15 +117,24 @@ def import_dataset_METABRIC(norm_mode='standard'):
     data = f_get_Normalization(data, norm_mode)
 
     time = np.asarray(df2[['event_time']])
+    # Debugging: Print time before rounding
+    print(f"Original Time (Before Rounding): {time[:5]}")
+
     label = np.asarray(df2[['label']])
 
     num_Category = int(np.max(time) * 1.2)  # To have enough time-horizon
     num_Event = int(len(np.unique(label)) - 1)  # Only count the number of events (do not count censoring)
 
+    print(f"num_Category: {num_Category}, num_Event: {num_Event}, x_dim: {data.shape[1]}")
+
     x_dim = data.shape[1]
 
     mask1 = f_get_fc_mask2(time, label, num_Event, num_Category)
     mask2 = f_get_fc_mask3(time, -1, num_Category)
+
+    # Debugging: Print mask shapes
+    print(f"Mask 1 Shape: {mask1.shape}")
+    print(f"Mask 2 Shape: {mask2.shape}")
 
     DIM = (x_dim)
     DATA = (data, time, label)
