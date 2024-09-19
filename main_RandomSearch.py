@@ -77,7 +77,7 @@ def get_random_hyperparameters(out_path):
 
 ##### MAIN RANDOM SEARCH SETUP #####
 OUT_ITERATION = 5  # Number of outer iterations (splits)
-RS_ITERATION = 50  # Number of random search iterations
+RS_ITERATION = 150  # Number of random search iterations
 
 data_mode = 'METABRIC'
 seed = 1234
