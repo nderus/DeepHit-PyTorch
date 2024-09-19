@@ -77,7 +77,7 @@ def get_random_hyperparameters(out_path):
 
 ##### MAIN RANDOM SEARCH SETUP #####
 OUT_ITERATION = 5  # Number of outer iterations (splits)
-RS_ITERATION = 150  # Number of random search iterations
+RS_ITERATION = 50  # Number of random search iterations
 
 data_mode = 'METABRIC'
 seed = 1234
@@ -109,7 +109,7 @@ out_path = os.path.join(data_mode, 'famo_results')
 
 ##### RANDOM SEARCH ACROSS MULTIPLE OUTER ITERATIONS #####
 for itr in range(OUT_ITERATION):
-    set_seeds(itr)  # Ensure reproducibility by setting seed at each outer iteration
+    #set_seeds(itr)  # Ensure reproducibility by setting seed at each outer iteration
     itr_dir = os.path.join(out_path, f'itr_{itr}')
     
     if not os.path.exists(itr_dir):
@@ -121,7 +121,7 @@ for itr in range(OUT_ITERATION):
     for r_itr in range(RS_ITERATION):
         print(f'OUTER_ITERATION: {itr}')
         print(f'Random search... iteration: {r_itr}')
-
+        set_seeds(itr * 100 + r_itr)  # Ensure reproducibility by setting seed at each random search iteration
 
         # Randomly choose hyperparameters
         new_parser = get_random_hyperparameters(out_path)
