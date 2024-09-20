@@ -80,7 +80,7 @@ def get_valid_performance(DATA, MASK, in_parser, out_itr, eval_time=None, MAX_VA
     file_path_final = in_parser['out_path'] + '/itr_' + str(out_itr)
 
     # Create directories if they don't exist
-    os.makedirs(file_path_final + '/famo_models/', exist_ok=True)
+    os.makedirs(file_path_final + '/models/', exist_ok=True)
 
     print(file_path_final + ' (a:' + str(alpha) + ' b:' + str(beta) + ')')
 
@@ -155,7 +155,7 @@ def get_valid_performance(DATA, MASK, in_parser, out_itr, eval_time=None, MAX_VA
                 max_valid = tmp_valid
                 print(f'Updated... Average C-index = {tmp_valid:.4f}')
                 if max_valid > MAX_VALUE:
-                    torch.save(model.state_dict(), os.path.join(file_path_final, 'famo_models', f'model_itr_{out_itr}.pth'))
+                    torch.save(model.state_dict(), os.path.join(file_path_final, 'models', f'model_itr_{out_itr}.pth'))
                 
             else:
                 stop_flag += 1

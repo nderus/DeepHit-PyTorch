@@ -116,7 +116,7 @@ for itr in range(OUT_ITERATION):
         os.makedirs(itr_dir)
     
     max_valid = 0.0
-    log_name = os.path.join(itr_dir, 'FAMO_hyperparameters_log.txt')
+    log_name = os.path.join(itr_dir, 'hyperparameters_log.txt')
 
     for r_itr in range(RS_ITERATION):
         print(f'OUTER_ITERATION: {itr}')
