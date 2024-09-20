@@ -105,7 +105,7 @@ data, time, label = DATA
 mask1, mask2 = MASK
 
 # Set output path for saving results
-out_path = os.path.join(data_mode, 'famo_results')
+out_path = os.path.join(data_mode, 'results')
 
 ##### RANDOM SEARCH ACROSS MULTIPLE OUTER ITERATIONS #####
 for itr in range(OUT_ITERATION):
