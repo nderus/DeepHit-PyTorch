@@ -121,7 +121,7 @@ for itr in range(OUT_ITERATION):
     for r_itr in range(RS_ITERATION):
         print(f'OUTER_ITERATION: {itr}')
         print(f'Random search... iteration: {r_itr}')
-        set_seeds(itr * 100 + r_itr)  # Ensure reproducibility by setting seed at each random search iteration
+        set_seeds(itr * 10 + r_itr)  # Ensure reproducibility by setting seed at each random search iteration
 
         # Randomly choose hyperparameters
         new_parser = get_random_hyperparameters(out_path)
