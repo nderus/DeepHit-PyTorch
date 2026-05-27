@@ -8,9 +8,9 @@ from sklearn.metrics import brier_score_loss
 from sklearn.model_selection import train_test_split
 
 import import_data as impt
-import utils_network as utils
 from class_DeepHit import Model_DeepHit
 from utils_eval import c_index, brier_score, weighted_c_index, weighted_brier_score
+from lifelines import KaplanMeierFitter
 
 _EPSILON = 1e-08
 
@@ -311,3 +311,75 @@ print("--------------------------------------------------------")
 print("- FINAL BRIER-SCORE: ")
 print(df2_mean)
 print("========================================================")
+
+# 1) Fit Kaplan–Meier on the full METABRIC censoring distribution
+#    (0 = censored, >0 = event from label[:,0])
+censor_indicator = (label[:, 0] == 0).astype(int)
+kmf = KaplanMeierFitter()
+# flatten in case time is shape (n,1)
+kmf.fit(time.flatten(), event_observed=censor_indicator, timeline=EVAL_TIMES)
+
+# 2) Extract G(t) at each evaluation time
+G = kmf.survival_function_.values.flatten()  # shape = (len(EVAL_TIMES),)
+
+# 3) Compute weights = drop in G over each interval
+drops = G[:-1] - G[1:]  # shape = (m-1,)
+weights = drops / drops.sum()  # normalized
+
+# 4) Take your df1_mean (shape: num_Event × m), and do a weighted sum over columns 1…m-1
+#    (we use columns 1…m-1 so each weight corresponds to interval [t_j, t_{j+1}))
+c_mean = df1_mean.values  # shape = (num_Event, m)
+# aggregated_Ctd for each event:
+aggregated_mean = np.dot(c_mean[:, 1:], weights)  # shape = (num_Event,)
+
+# 5) Save
+df_agg = pd.DataFrame(aggregated_mean, index=df1_mean.index, columns=["aggregated_Ctd"])
+df_agg.to_csv(os.path.join(in_path, "aggregated_CINDEX_FINAL_MEAN.csv"))
+
+print("========================================================")
+print("- AGGREGATED RISK-SET WEIGHTED Ctd-INDEX (mean):")
+print(df_agg)
+print("========================================================")
+
+
+# --- AGGREGATED Ctd-INDEX VIA TRAPEZOIDAL RULE --------------------------
+
+risk_matrix = np.cumsum(pred, axis=2)  # shape (n_test, num_Event, num_Category)
+
+# 2) Define a fine grid of evaluation times (e.g. every 6 months)
+max_cat = risk_matrix.shape[2]  # e.g. 433 for METABRIC
+eval_months = np.arange(6, max_cat, 6)  # [6,12,18,…,432]
+
+# 3) Preallocate a C-score table: rows=events, cols=timepoints
+num_Event = pred.shape[1]
+C_grid = np.zeros((num_Event, len(eval_months)))
+
+# 4) Loop to fill it
+for j, t in enumerate(eval_months):
+    # risk up to t months is risk_matrix[:,:,t-1] (0-indexed)
+    risk_t = risk_matrix[:, :, t - 1]
+
+    for k in range(num_Event):
+        # get the binary event vector for cause k in train/test
+        E_tr_k = (tr_label[:, 0] == k + 1).astype(int)
+        E_te_k = (te_label[:, 0] == k + 1).astype(int)
+
+        C_grid[k, j] = weighted_c_index(
+            tr_time.flatten(), E_tr_k, risk_t[:, k], te_time.flatten(), E_te_k, t
+        )
+
+# 5) Trapezoidal integration & normalization
+#    area under each event’s C(t) curve
+areas = np.trapz(C_grid, x=eval_months, axis=1)
+iCtd_trapz_full = areas / eval_months[-1]
+
+# 6) Save results
+import pandas as pd
+
+df_trap_full = pd.DataFrame(
+    {"iCtd_trapz": iCtd_trapz_full}, index=[f"Event_{k+1}" for k in range(num_Event)]
+)
+df_trap_full.to_csv(os.path.join(in_path, "trapz_CINDEX_FULL_GRID.csv"))
+
+print("--- Full-grid trapezoidal iCtd: ---")
+print(df_trap_full)

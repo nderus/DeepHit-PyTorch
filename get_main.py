@@ -7,8 +7,6 @@ import os
 from termcolor import colored
 from sklearn.metrics import brier_score_loss
 
-# Import user-defined utilities
-import utils_network as utils
 from class_DeepHit import Model_DeepHit
 from utils_eval import weighted_c_index, weighted_brier_score
 
@@ -96,6 +94,7 @@ def get_valid_performance(
         "num_layers_CS": in_parser["num_layers_CS"],
         "active_fn": ACTIVATION_FN[in_parser["active_fn"]],
         "initial_W": initial_W,
+        "keep_prob": keep_prob,
     }
 
     file_path_final = in_parser["out_path"] + "/itr_" + str(out_itr)

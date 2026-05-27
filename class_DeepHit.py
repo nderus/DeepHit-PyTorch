@@ -1,190 +1,149 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 
 _EPSILON = 1e-08
 
 
-# USER-DEFINED FUNCTIONS
-def log(x):
-    return torch.log(x + _EPSILON)
-
-
-def div(x, y):
-    return x / (y + _EPSILON)
-
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-
-
 class Model_DeepHit(nn.Module):
-    def __init__(self, input_dims, network_settings):
-        super(Model_DeepHit, self).__init__()
+    """PyTorch port of DeepHit (Lee et al., AAAI 2018).
 
-        # INPUT DIMENSIONS
+    Mirrors the original TF1 reference implementation at chl8856/DeepHit:
+    - Shared FC subnet, then residual concat of the raw input with the shared
+      output, then one cause-specific subnet per event.
+    - Dropout after every hidden activation inside the subnets, and once more
+      before the output layer; drop rate = 1 - keep_prob.
+    - Joint softmax over the flattened (event, time) axis -- the output is a
+      single distribution over all event-time pairs per subject.
+    """
+
+    def __init__(self, input_dims, network_settings):
+        super().__init__()
+
         self.x_dim = input_dims["x_dim"]
         self.num_Event = input_dims["num_Event"]
         self.num_Category = input_dims["num_Category"]
 
-        # NETWORK HYPER-PARAMETERS
         self.h_dim_shared = network_settings["h_dim_shared"]
         self.h_dim_CS = network_settings["h_dim_CS"]
         self.num_layers_shared = network_settings["num_layers_shared"]
         self.num_layers_CS = network_settings["num_layers_CS"]
         self.active_fn = network_settings["active_fn"]
-        self.initial_W = network_settings["initial_W"]  # Custom weight initializer
+        self.initial_W = network_settings["initial_W"]
+        # Default 0.6 matches the upstream random-search config.
+        self.keep_prob = network_settings.get("keep_prob", 0.6)
+        self.dropout_p = 1.0 - self.keep_prob
 
-        # Regularization coefficients
-        self.reg_W = 1e-4  # L2 regularization for all layers except output
-        self.reg_W_out = 1e-4  # L1 regularization for output layer only
+        self.reg_W = 1e-4  # L2 on hidden weights
+        self.reg_W_out = 1e-4  # L1 on the output weight
 
-        # Build shared and cause-specific subnetworks
-        self.shared_layers = self.build_shared_layers()
-        self.cause_specific_layers = self.build_cause_specific_layers()
-        self.output_layer = self.build_output_layer()
-
-        # Apply weight initialization
-        self.initialize_weights()
-
-    def initialize_weights(self):
-        # Initialize shared layers
-        for layer in self.shared_layers:
-            if isinstance(layer, nn.Linear):
-                self.initial_W(layer.weight)
-                if layer.bias is not None:
-                    nn.init.zeros_(layer.bias)
-
-        # Initialize cause-specific layers
-        for event_layers in self.cause_specific_layers:
-            for layer in event_layers:
-                if isinstance(layer, nn.Linear):
-                    self.initial_W(layer.weight)
-                    if layer.bias is not None:
-                        nn.init.zeros_(layer.bias)
-
-        # Initialize output layer
-        if isinstance(self.output_layer, nn.Linear):
-            self.initial_W(self.output_layer.weight)
-            if self.output_layer.bias is not None:
-                nn.init.zeros_(self.output_layer.bias)
-
-    def build_shared_layers(self):
-        layers = []
-        for i in range(self.num_layers_shared):
-            input_dim = self.x_dim if i == 0 else self.h_dim_shared
-            layers.append(nn.Linear(input_dim, self.h_dim_shared))
-        return nn.ModuleList(layers)
-
-    def build_cause_specific_layers(self):
-        layers = []
-        for _ in range(self.num_Event):
-            event_layers = []
-            for i in range(self.num_layers_CS):
-                input_dim = self.h_dim_shared if i == 0 else self.h_dim_CS
-                event_layers.append(nn.Linear(input_dim, self.h_dim_CS))
-            layers.append(nn.ModuleList(event_layers))
-        return nn.ModuleList(layers)
-
-    def build_output_layer(self):
-        return nn.Linear(
+        self.shared_layers = self._build_subnet(
+            self.x_dim, self.h_dim_shared, self.h_dim_shared, self.num_layers_shared
+        )
+        # Residual: cause-specific subnets see [raw x, shared output].
+        cs_in_dim = self.x_dim + self.h_dim_shared
+        self.cause_specific_layers = nn.ModuleList(
+            [
+                self._build_subnet(
+                    cs_in_dim, self.h_dim_CS, self.h_dim_CS, self.num_layers_CS
+                )
+                for _ in range(self.num_Event)
+            ]
+        )
+        self.output_layer = nn.Linear(
             self.num_Event * self.h_dim_CS, self.num_Event * self.num_Category
         )
 
-    def forward(self, x):
-        # Forward pass through shared layers
+        self.initialize_weights()
+
+    @staticmethod
+    def _build_subnet(in_dim, h_dim, o_dim, num_layers):
+        layers = []
+        if num_layers == 1:
+            layers.append(nn.Linear(in_dim, o_dim))
+        else:
+            for i in range(num_layers):
+                if i == 0:
+                    layers.append(nn.Linear(in_dim, h_dim))
+                elif i < num_layers - 1:
+                    layers.append(nn.Linear(h_dim, h_dim))
+                else:
+                    layers.append(nn.Linear(h_dim, o_dim))
+        return nn.ModuleList(layers)
+
+    def initialize_weights(self):
         for layer in self.shared_layers:
+            self.initial_W(layer.weight)
+            nn.init.zeros_(layer.bias)
+        for cs in self.cause_specific_layers:
+            for layer in cs:
+                self.initial_W(layer.weight)
+                nn.init.zeros_(layer.bias)
+        self.initial_W(self.output_layer.weight)
+        nn.init.zeros_(self.output_layer.bias)
+
+    def _forward_subnet(self, x, layers):
+        # Original create_FCNet: dropout after every hidden activation, but
+        # not after the subnet's final layer.
+        n = len(layers)
+        for i, layer in enumerate(layers):
             x = self.active_fn(layer(x))
+            if n > 1 and i < n - 1:
+                x = F.dropout(x, p=self.dropout_p, training=self.training)
+        return x
 
-        # Forward pass through cause-specific layers
-        outputs = []
-        for event_layers in self.cause_specific_layers:
-            h = x
-            for layer in event_layers:
-                h = self.active_fn(layer(h))
-            outputs.append(h)
+    def forward(self, x):
+        shared_out = self._forward_subnet(x, self.shared_layers)
+        h = torch.cat([x, shared_out], dim=1)
 
-        # Stack outputs for each event
-        out = torch.stack(outputs, dim=1)
-        out = out.view(out.size(0), -1)  # Flatten for output layer
-
-        # Apply dropout
-        out = F.dropout(out, p=0.4, training=self.training)
-
-        # Final output layer
+        cs_outs = [self._forward_subnet(h, cs) for cs in self.cause_specific_layers]
+        out = torch.stack(cs_outs, dim=1).view(x.size(0), -1)
+        out = F.dropout(out, p=self.dropout_p, training=self.training)
         out = self.output_layer(out)
-        out = out.view(-1, self.num_Event, self.num_Category)
-        return F.softmax(out, dim=-1)
+        # Joint softmax over the flat (event, time) axis.
+        out = F.softmax(out, dim=1)
+        return out.view(-1, self.num_Event, self.num_Category)
 
     def loss_log_likelihood(self, k_mb, m1_mb, predictions):
-        # Log-likelihood loss calculation
-        I_1 = torch.sign(k_mb)
-        tmp1 = torch.sum(torch.sum(m1_mb * predictions, dim=2), dim=1, keepdim=True)
-        tmp1 = I_1 * torch.log(tmp1)
-        tmp2 = torch.sum(torch.sum(m1_mb * predictions, dim=2), dim=1, keepdim=True)
-        tmp2 = (1.0 - I_1) * torch.log(tmp2)
-        return -torch.mean(tmp1 + tmp2)
+        # m1_mb encodes both branches: a single 1 at (k-1, t) for uncensored
+        # subjects, and 1s at all (event, time > t_c) for censored subjects.
+        # So sum_{event, time} m1 * pred = P(T=t, K=k) or P(T > t_c) as needed.
+        masked_sum = torch.sum(m1_mb * predictions, dim=(1, 2))
+        return -torch.mean(torch.log(masked_sum + _EPSILON))
 
     def loss_ranking(self, t_mb, k_mb, m2_mb, predictions):
         sigma1 = torch.tensor(0.1, dtype=torch.float32, device=predictions.device)
         eta = []
 
         for e in range(self.num_Event):
-            one_vector = torch.ones_like(
-                t_mb, dtype=torch.float32
-            )  # Equivalent to tf.ones_like
+            one_vector = torch.ones_like(t_mb, dtype=torch.float32)
 
-            # I_2: Indicator for the event
-            I_2 = (k_mb == (e + 1)).float()  # Indicator for event "e+1"
-            I_2_diag = torch.diag(I_2.squeeze())  # Diagonal matrix
+            I_2 = (k_mb == (e + 1)).float()
+            I_2_diag = torch.diag(I_2.squeeze())
 
-            tmp_e = predictions[:, e, :]  # Event-specific joint probability
+            tmp_e = predictions[:, e, :]
 
-            # Compute risk matrix R
-            R = torch.matmul(tmp_e, m2_mb.T)  # Risk of each individual
-            diag_R = torch.diag(R)  # Get the diagonal values
-            R = (
-                torch.matmul(one_vector, diag_R.unsqueeze(0)) - R
-            )  # Compute R_ij = r_i(T_i) - r_j(T_i)
-            R = R.T  # Transpose to match the dimensions
+            R = torch.matmul(tmp_e, m2_mb.T)
+            diag_R = torch.diag(R)
+            R = torch.matmul(one_vector, diag_R.unsqueeze(0)) - R
+            R = R.T
 
-            # Time difference matrix T (equivalent to tf.nn.relu(tf.sign(...)))
-            T = torch.nn.functional.relu(
+            T = F.relu(
                 torch.sign(
                     torch.matmul(one_vector, t_mb.T) - torch.matmul(t_mb, one_vector.T)
                 )
             )
-            T = torch.matmul(
-                I_2_diag, T
-            )  # Remain T_ij=1 only when the event occurred for subject i
+            T = torch.matmul(I_2_diag, T)
 
-            # Compute exponent term (equivalent to tf.exp())
             exp_term = torch.exp(-R / sigma1)
-
-            # Compute the ranking loss for event e
             tmp_eta = torch.mean(T * exp_term, dim=1, keepdim=True)
             eta.append(tmp_eta)
 
-        # Stack and compute final loss
         eta = torch.stack(eta, dim=1)
         eta = torch.mean(eta.view(-1, self.num_Event), dim=1, keepdim=True)
-        loss = torch.sum(eta)
-        return loss
+        return torch.sum(eta)
 
     def loss_calibration(self, k_mb, m2_mb, predictions):
-        # Calibration loss calculation
         eta_calibration = []
         for e in range(self.num_Event):
             I_2 = (k_mb == (e + 1)).float()
@@ -203,60 +162,34 @@ class Model_DeepHit(nn.Module):
         m1_mb, m2_mb = MASK
         alpha, beta, gamma = PARAMETERS
 
-        # Compute the primary loss terms
         loss1 = self.loss_log_likelihood(k_mb, m1_mb, predictions)
         loss2 = self.loss_ranking(t_mb, k_mb, m2_mb, predictions)
         loss3 = self.loss_calibration(k_mb, m2_mb, predictions)
-        # Compute the total primary loss
         total_loss = alpha * loss1 + beta * loss2 + gamma * loss3
 
-        # Initialize regularization loss tensors
-        l2_reg_loss = torch.tensor(0.0, device=predictions.device)
-        l1_reg_loss = torch.tensor(0.0, device=predictions.device)
-
-        # L2 regularization for all shared and cause-specific layers
+        # L2 over hidden weights only (biases excluded, matching upstream).
+        l2_reg = torch.tensor(0.0, device=predictions.device)
         for layer in self.shared_layers:
-            for param in layer.parameters():
-                if param.requires_grad:
-                    l2_reg_loss += torch.sum(param**2)  # Add L2 regularization
+            l2_reg = l2_reg + torch.sum(layer.weight**2)
+        for cs in self.cause_specific_layers:
+            for layer in cs:
+                l2_reg = l2_reg + torch.sum(layer.weight**2)
 
-        for event_layers in self.cause_specific_layers:
-            for layer in event_layers:
-                for param in layer.parameters():
-                    if param.requires_grad:
-                        l2_reg_loss += torch.sum(param**2)  # Add L2 regularization
+        # L1 on the output weight only.
+        l1_reg = torch.sum(torch.abs(self.output_layer.weight))
 
-        # L1 regularization only for the output layer
-        if self.output_layer.weight.requires_grad:
-            l1_reg_loss += torch.sum(
-                torch.abs(self.output_layer.weight)
-            )  # Add L1 regularization
-
-        # Combine the primary loss with the regularization losses
-        total_loss += self.reg_W * l2_reg_loss + self.reg_W_out * l1_reg_loss
-
-        return total_loss
+        return total_loss + self.reg_W * l2_reg + self.reg_W_out * l1_reg
 
     def training_step(self, DATA, MASK, PARAMETERS, optimizer):
-        x_mb, k_mb, t_mb = DATA
-        m1_mb, m2_mb = MASK
-
-        # Zero gradients
+        x_mb, _, _ = DATA
         optimizer.zero_grad()
-
-        # Forward pass
         predictions = self(x_mb)
-
-        # Compute loss
         loss = self.compute_loss(DATA, MASK, PARAMETERS, predictions)
-
-        # Backward pass and optimization
         loss.backward()
         optimizer.step()
-
         return loss.item()
 
     def predict(self, x_test):
-        self.eval()  # Set the model to evaluation mode (disables dropout, etc.)
-        with torch.no_grad():  # Disable gradient computation during inference
+        self.eval()
+        with torch.no_grad():
             return self.forward(x_test)

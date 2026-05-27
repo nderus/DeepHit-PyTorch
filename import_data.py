@@ -126,9 +126,11 @@ def import_dataset_METABRIC(norm_mode="standard"):
     data = f_get_Normalization(data, norm_mode)
 
     time = np.asarray(df2[["event_time"]])
-    # Debugging: Print time before rounding
-    print(f"Original Time (Before Rounding): {time[:5]}")
-
+    # The reference repo ships this line commented out, but EVAL_TIMES=[144, 288, 432]
+    # in main_RandomSearch.py only makes sense once event_time is rescaled to
+    # "approximate months" (days/12). Without the conversion those horizons
+    # capture <5% of events; with it they capture ~47/75/95%.
+    time = np.round(time / 12.0)
     label = np.asarray(df2[["label"]])
 
     num_Category = int(np.max(time) * 1.2)  # To have enough time-horizon
