@@ -1,0 +1,13 @@
+[tool.black]
+line-length = 88
+target-version = ["py38"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+
+[tool.ruff.lint]
+# Conservative starter set: pyflakes (F) catches real bugs (undefined names,
+# unused imports), pycodestyle errors (E9) catches syntax errors. Style rules
+# that conflict with Black are deliberately excluded.
+select = ["E9", "F63", "F7", "F82"]

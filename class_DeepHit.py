@@ -5,12 +5,15 @@ import torch.optim as optim
 
 _EPSILON = 1e-08
 
+
 # USER-DEFINED FUNCTIONS
 def log(x):
     return torch.log(x + _EPSILON)
 
+
 def div(x, y):
     return x / (y + _EPSILON)
+
 
 import torch
 import torch.nn as nn
@@ -26,22 +29,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+
 class Model_DeepHit(nn.Module):
     def __init__(self, input_dims, network_settings):
         super(Model_DeepHit, self).__init__()
 
         # INPUT DIMENSIONS
-        self.x_dim = input_dims['x_dim']
-        self.num_Event = input_dims['num_Event']
-        self.num_Category = input_dims['num_Category']
+        self.x_dim = input_dims["x_dim"]
+        self.num_Event = input_dims["num_Event"]
+        self.num_Category = input_dims["num_Category"]
 
         # NETWORK HYPER-PARAMETERS
-        self.h_dim_shared = network_settings['h_dim_shared']
-        self.h_dim_CS = network_settings['h_dim_CS']
-        self.num_layers_shared = network_settings['num_layers_shared']
-        self.num_layers_CS = network_settings['num_layers_CS']
-        self.active_fn = network_settings['active_fn']
-        self.initial_W = network_settings['initial_W']  # Custom weight initializer
+        self.h_dim_shared = network_settings["h_dim_shared"]
+        self.h_dim_CS = network_settings["h_dim_CS"]
+        self.num_layers_shared = network_settings["num_layers_shared"]
+        self.num_layers_CS = network_settings["num_layers_CS"]
+        self.active_fn = network_settings["active_fn"]
+        self.initial_W = network_settings["initial_W"]  # Custom weight initializer
 
         # Regularization coefficients
         self.reg_W = 1e-4  # L2 regularization for all layers except output
@@ -95,7 +99,9 @@ class Model_DeepHit(nn.Module):
         return nn.ModuleList(layers)
 
     def build_output_layer(self):
-        return nn.Linear(self.num_Event * self.h_dim_CS, self.num_Event * self.num_Category)
+        return nn.Linear(
+            self.num_Event * self.h_dim_CS, self.num_Event * self.num_Category
+        )
 
     def forward(self, x):
         # Forward pass through shared layers
@@ -134,33 +140,43 @@ class Model_DeepHit(nn.Module):
     def loss_ranking(self, t_mb, k_mb, m2_mb, predictions):
         sigma1 = torch.tensor(0.1, dtype=torch.float32, device=predictions.device)
         eta = []
-        
+
         for e in range(self.num_Event):
-            one_vector = torch.ones_like(t_mb, dtype=torch.float32)  # Equivalent to tf.ones_like
-            
+            one_vector = torch.ones_like(
+                t_mb, dtype=torch.float32
+            )  # Equivalent to tf.ones_like
+
             # I_2: Indicator for the event
             I_2 = (k_mb == (e + 1)).float()  # Indicator for event "e+1"
             I_2_diag = torch.diag(I_2.squeeze())  # Diagonal matrix
 
             tmp_e = predictions[:, e, :]  # Event-specific joint probability
-            
+
             # Compute risk matrix R
             R = torch.matmul(tmp_e, m2_mb.T)  # Risk of each individual
             diag_R = torch.diag(R)  # Get the diagonal values
-            R = torch.matmul(one_vector, diag_R.unsqueeze(0)) - R  # Compute R_ij = r_i(T_i) - r_j(T_i)
+            R = (
+                torch.matmul(one_vector, diag_R.unsqueeze(0)) - R
+            )  # Compute R_ij = r_i(T_i) - r_j(T_i)
             R = R.T  # Transpose to match the dimensions
-            
+
             # Time difference matrix T (equivalent to tf.nn.relu(tf.sign(...)))
-            T = torch.nn.functional.relu(torch.sign(torch.matmul(one_vector, t_mb.T) - torch.matmul(t_mb, one_vector.T)))
-            T = torch.matmul(I_2_diag, T)  # Remain T_ij=1 only when the event occurred for subject i
-            
+            T = torch.nn.functional.relu(
+                torch.sign(
+                    torch.matmul(one_vector, t_mb.T) - torch.matmul(t_mb, one_vector.T)
+                )
+            )
+            T = torch.matmul(
+                I_2_diag, T
+            )  # Remain T_ij=1 only when the event occurred for subject i
+
             # Compute exponent term (equivalent to tf.exp())
             exp_term = torch.exp(-R / sigma1)
-            
+
             # Compute the ranking loss for event e
             tmp_eta = torch.mean(T * exp_term, dim=1, keepdim=True)
             eta.append(tmp_eta)
-        
+
         # Stack and compute final loss
         eta = torch.stack(eta, dim=1)
         eta = torch.mean(eta.view(-1, self.num_Event), dim=1, keepdim=True)
@@ -177,7 +193,9 @@ class Model_DeepHit(nn.Module):
             tmp_eta = torch.mean((r - I_2) ** 2, dim=0, keepdim=True)
             eta_calibration.append(tmp_eta)
         eta_calibration = torch.stack(eta_calibration, dim=1)
-        eta_calibration = torch.mean(eta_calibration.view(-1, self.num_Event), dim=1, keepdim=True)
+        eta_calibration = torch.mean(
+            eta_calibration.view(-1, self.num_Event), dim=1, keepdim=True
+        )
         return torch.sum(eta_calibration)
 
     def compute_loss(self, DATA, MASK, PARAMETERS, predictions):
@@ -193,30 +211,32 @@ class Model_DeepHit(nn.Module):
         total_loss = alpha * loss1 + beta * loss2 + gamma * loss3
 
         # Initialize regularization loss tensors
-        l2_reg_loss = torch.tensor(0., device=predictions.device)
-        l1_reg_loss = torch.tensor(0., device=predictions.device)
+        l2_reg_loss = torch.tensor(0.0, device=predictions.device)
+        l1_reg_loss = torch.tensor(0.0, device=predictions.device)
 
         # L2 regularization for all shared and cause-specific layers
         for layer in self.shared_layers:
             for param in layer.parameters():
                 if param.requires_grad:
-                    l2_reg_loss += torch.sum(param ** 2)  # Add L2 regularization
+                    l2_reg_loss += torch.sum(param**2)  # Add L2 regularization
 
         for event_layers in self.cause_specific_layers:
             for layer in event_layers:
                 for param in layer.parameters():
                     if param.requires_grad:
-                        l2_reg_loss += torch.sum(param ** 2)  # Add L2 regularization
+                        l2_reg_loss += torch.sum(param**2)  # Add L2 regularization
 
         # L1 regularization only for the output layer
         if self.output_layer.weight.requires_grad:
-            l1_reg_loss += torch.sum(torch.abs(self.output_layer.weight))  # Add L1 regularization
+            l1_reg_loss += torch.sum(
+                torch.abs(self.output_layer.weight)
+            )  # Add L1 regularization
 
         # Combine the primary loss with the regularization losses
         total_loss += self.reg_W * l2_reg_loss + self.reg_W_out * l1_reg_loss
 
         return total_loss
-    
+
     def training_step(self, DATA, MASK, PARAMETERS, optimizer):
         x_mb, k_mb, t_mb = DATA
         m1_mb, m2_mb = MASK
@@ -240,4 +260,3 @@ class Model_DeepHit(nn.Module):
         self.eval()  # Set the model to evaluation mode (disables dropout, etc.)
         with torch.no_grad():  # Disable gradient computation during inference
             return self.forward(x_test)
-        
