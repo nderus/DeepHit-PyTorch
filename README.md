@@ -3,6 +3,7 @@
 [![Python 3.8](https://img.shields.io/badge/python-3.8-blue.svg)](https://www.python.org/downloads/release/python-380/)
 [![PyTorch 2.0](https://img.shields.io/badge/PyTorch-2.0-EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Lint](https://github.com/nderus/DeepHit-PyTorch/actions/workflows/lint.yml/badge.svg)](https://github.com/nderus/DeepHit-PyTorch/actions/workflows/lint.yml)
 
 An unofficial PyTorch port of **DeepHit**, a deep neural network for survival
 analysis that handles **competing risks** without restrictive parametric
