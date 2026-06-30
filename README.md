@@ -34,8 +34,8 @@ pandas.
 
 Two sample datasets are bundled under `sample data/`:
 
-- `SYNTHETIC` — the competing-risks synthetic benchmark from the original paper.
-- `METABRIC` — breast-cancer cohort with two event types.
+- `SYNTHETIC` — the competing-risks synthetic benchmark from the original paper (two event types).
+- `METABRIC` — breast-cancer cohort with a single event type.
 
 Pick a dataset by editing the `data_mode` variable near the top of
 `main_RandomSearch.py` (and `summarize_results.py`), then:
@@ -67,6 +67,4 @@ If you use this code, please cite the original paper:
 
 ## License
 
-This repository does not currently include a license file. Refer to the
-[original DeepHit repository](https://github.com/chl8856/DeepHit) for the
-canonical implementation's licensing terms.
+Released under the [MIT License](LICENSE).
