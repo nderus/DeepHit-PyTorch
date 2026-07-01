@@ -215,6 +215,11 @@ for out_itr in range(OUT_ITERATION):
         random_state=seed,
     )
 
+    # Normalize using parameters fit on the TRAINING split only (matches the
+    # leakage-free scheme used during training in get_main.py).
+    norm_params = impt.f_get_norm_params(tr_data, "standard")
+    te_data = impt.f_apply_Normalization(te_data, norm_params)
+
     ##### LOAD SAVED MODEL #####
     model.load_state_dict(
         torch.load(

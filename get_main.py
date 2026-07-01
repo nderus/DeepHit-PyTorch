@@ -7,6 +7,7 @@ import os
 from termcolor import colored
 from sklearn.metrics import brier_score_loss
 
+import import_data as impt
 from class_DeepHit import Model_DeepHit
 from utils_eval import weighted_c_index, weighted_brier_score
 
@@ -143,6 +144,12 @@ def get_valid_performance(
         test_size=0.20,
         random_state=seed,
     )
+
+    # Fit normalization on the TRAINING split only (no leakage), then apply the
+    # same parameters to validation (and, at eval time, to test).
+    norm_params = impt.f_get_norm_params(tr_data, "standard")
+    tr_data = impt.f_apply_Normalization(tr_data, norm_params)
+    va_data = impt.f_apply_Normalization(va_data, norm_params)
 
     # Convert va_data to a tensor
     va_data = torch.tensor(

@@ -4,27 +4,54 @@ import torch
 
 
 ##### USER-DEFINED FUNCTIONS #####
-def f_get_Normalization(X, norm_mode):
+def f_get_norm_params(X, norm_mode):
     """
-    Normalize the input data matrix X according to the selected normalization mode.
+    Fit per-feature normalization parameters from X.
 
-    norm_mode: str, either 'standard' (zero mean, unit variance) or 'normal' (min-max normalization)
+    To avoid leakage, fit these on the TRAINING split only, then apply them to
+    train/val/test with f_apply_Normalization. (The upstream chl8856/DeepHit
+    code normalizes the full dataset before splitting; this port fits on train.)
+
+    norm_mode: 'standard' (zero mean, unit variance) or 'normal' (min-max).
     """
-    num_Patient, num_Feature = X.shape
+    if norm_mode == "standard":
+        return {"mode": "standard", "mu": np.mean(X, axis=0), "sigma": np.std(X, axis=0)}
+    elif norm_mode == "normal":
+        return {"mode": "normal", "min": np.min(X, axis=0), "max": np.max(X, axis=0)}
+    else:
+        raise ValueError("Invalid normalization mode selected!")
 
-    if norm_mode == "standard":  # Zero mean unit variance
+
+def f_apply_Normalization(X, params):
+    """Apply previously-fit normalization parameters (see f_get_norm_params)."""
+    X = np.asarray(X, dtype=float).copy()
+    num_Feature = X.shape[1]
+
+    if params["mode"] == "standard":
+        mu, sigma = params["mu"], params["sigma"]
         for j in range(num_Feature):
-            if np.std(X[:, j]) != 0:
-                X[:, j] = (X[:, j] - np.mean(X[:, j])) / np.std(X[:, j])
+            if sigma[j] != 0:
+                X[:, j] = (X[:, j] - mu[j]) / sigma[j]
             else:
-                X[:, j] = X[:, j] - np.mean(X[:, j])
-    elif norm_mode == "normal":  # Min-max normalization
+                X[:, j] = X[:, j] - mu[j]
+    elif params["mode"] == "normal":
+        xmin, xmax = params["min"], params["max"]
         for j in range(num_Feature):
-            X[:, j] = (X[:, j] - np.min(X[:, j])) / (np.max(X[:, j]) - np.min(X[:, j]))
+            denom = xmax[j] - xmin[j]
+            X[:, j] = (X[:, j] - xmin[j]) / denom if denom != 0 else 0.0
     else:
         raise ValueError("Invalid normalization mode selected!")
 
     return X
+
+
+def f_get_Normalization(X, norm_mode):
+    """Fit-and-apply normalization on a single matrix (full-data convenience).
+
+    Kept for backward compatibility. Prefer f_get_norm_params (fit on the
+    training split) + f_apply_Normalization to avoid train/test leakage.
+    """
+    return f_apply_Normalization(X, f_get_norm_params(X, norm_mode))
 
 
 ### MASK FUNCTIONS ###
@@ -89,7 +116,9 @@ def import_dataset_SYNTHETIC(norm_mode="standard"):
     label = np.asarray(df[["label"]])
     time = np.asarray(df[["time"]])
     data = np.asarray(df.iloc[:, 4:])
-    data = f_get_Normalization(data, norm_mode)
+    # NOTE: normalization is intentionally deferred to AFTER the train/test
+    # split (fit on train only) in get_main.py / summarize_results.py to avoid
+    # leakage. norm_mode is accepted for API compatibility but unused here.
 
     num_Category = int(np.max(time) * 1.2)  # To have enough time-horizon
     num_Event = int(
@@ -123,7 +152,8 @@ def import_dataset_METABRIC(norm_mode="standard"):
     df2 = pd.read_csv(in_filename2, sep=",")
 
     data = np.asarray(df1)
-    data = f_get_Normalization(data, norm_mode)
+    # NOTE: normalization is deferred to AFTER the train/test split (fit on
+    # train only) to avoid leakage; see import_dataset_SYNTHETIC.
 
     time = np.asarray(df2[["event_time"]])
     # The reference repo ships this line commented out, but EVAL_TIMES=[144, 288, 432]
