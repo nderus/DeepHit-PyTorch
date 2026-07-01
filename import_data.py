@@ -15,7 +15,11 @@ def f_get_norm_params(X, norm_mode):
     norm_mode: 'standard' (zero mean, unit variance) or 'normal' (min-max).
     """
     if norm_mode == "standard":
-        return {"mode": "standard", "mu": np.mean(X, axis=0), "sigma": np.std(X, axis=0)}
+        return {
+            "mode": "standard",
+            "mu": np.mean(X, axis=0),
+            "sigma": np.std(X, axis=0),
+        }
     elif norm_mode == "normal":
         return {"mode": "normal", "min": np.min(X, axis=0), "max": np.max(X, axis=0)}
     else:
