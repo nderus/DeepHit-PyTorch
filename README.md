@@ -4,6 +4,7 @@
 [![PyTorch 2.0](https://img.shields.io/badge/PyTorch-2.0-EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Lint](https://github.com/nderus/DeepHit-PyTorch/actions/workflows/lint.yml/badge.svg)](https://github.com/nderus/DeepHit-PyTorch/actions/workflows/lint.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An unofficial PyTorch port of **DeepHit**, a deep neural network for survival
 analysis that handles **competing risks** without restrictive parametric
@@ -28,7 +29,8 @@ conda activate deephit-torch
 ```
 
 The environment pins Python 3.8, PyTorch 2.0.1, lifelines, scikit-learn, and
-pandas.
+pandas. Without conda, `pip install -r requirements.txt` covers the core
+runtime dependencies.
 
 ## Quickstart
 

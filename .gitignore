@@ -2,3 +2,6 @@ METABRIC/
 # Ignore Python cache files
 __pycache__/
 *.py[cod]
+
+# Search outputs / checkpoints
+*/results/
