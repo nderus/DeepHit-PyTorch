@@ -17,6 +17,14 @@ Based on the original TensorFlow implementation by Lee et al.
 below. The architecture, losses, and evaluation protocol mirror the original,
 except for one documented correction (see [Reproduction](#reproduction)).
 
+## Relation to other implementations
+
+This repository is a faithful PyTorch translation of the original TensorFlow code
+([chl8856/DeepHit](https://github.com/chl8856/DeepHit)), preserving its
+architecture, loss, masks, and integer-time discretization with a padded horizon.
+Other packages re-implement DeepHit with different design choices, so their
+results are not directly comparable.
+
 ## Installation
 
 Clone the repo and create the conda environment from the provided spec:
